@@ -4,8 +4,9 @@
 .httr-oauth
 .DS_Store
 .sav
+.spv
 .csv
 .RData
 .xlsx
 .xls
-/data
+data/
