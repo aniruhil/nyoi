@@ -1,0 +1,489 @@
+---
+title: "Boys and Girls Club"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    self-contained: true
+    html-math-method: katex
+    column: page
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.align = "center", cache = TRUE
+  )
+
+```
+
+```{r data-prep}
+
+haven::read_sav(
+  "MergedBinaryNYOIYRBSS.sav"
+  ) -> nyoi
+
+library(tidyverse)
+
+nyoi %>%
+  select(
+    contains("binary"), NYOICase1, ACTIVE, AGENew, GENDER
+  ) %>%
+  filter(AGENew != 19) %>%
+  mutate(
+    Racebinary = factor(
+      Racebinary,
+      levels = c(0, 1), 
+      labels = c("White", "NonWhite")
+      ),
+    GENDER = factor(
+      GENDER,
+      levels = c(1, 2),
+      labels = c("Female", "Male")
+      ), 
+    FightBinary = factor(
+      FightBinary,
+      levels = c(0, 1), 
+      labels = c("No", "Yes")
+      ), 
+    CIGBinary = factor(
+      CIGBinary,
+      levels = c(0, 1), 
+      labels = c("No", "Yes")
+      ), 
+    VapeBinary = factor(
+      VapeBinary,
+      levels = c(0, 1), 
+      labels = c("No", "Yes")
+      ), 
+    AlcoholBinary = factor(
+      AlcoholBinary,
+      levels = c(0, 1), 
+      labels = c("No", "Yes")
+      ), 
+    MarijBinary = factor(
+      MarijBinary,
+      levels = c(0, 1), 
+      labels = c("No", "Yes")
+      ), 
+    RxBinary = factor(
+      RxBinary,
+      levels = c(0, 1), 
+      labels = c("No", "Yes")
+      ), 
+    NYOICase1 = factor(
+      NYOICase1,
+      levels = c(0, 1),
+      labels = c("YRBSS", "NYOI")
+      ),
+    AGENew = factor(AGENew)
+    ) -> mydf0
+
+summary(mydf0)
+```
+
+
+There are a lot of missing values so let us drop all cases where even one variable has an `NA` recorded. 
+
+```{r}
+na.omit(mydf0) -> mydf1
+
+mydf1 %>%
+  filter(AGENew != "13") -> mydf1
+
+droplevels(mydf1$AGENew) -> mydf1$AGENew
+
+summary(mydf1)
+
+```
+
+Now we start with the unmatched data to see how the groups stack up against each other on gender, race, and age. 
+
+
+```{r match01}
+
+library(MatchIt)
+
+matchit(
+  NYOICase1 ~ AGENew + GENDER + Racebinary,
+  data = mydf1,
+  method = NULL,
+  distance = "glm"
+  ) -> mout0
+
+summary(mout0)
+
+```
+
+It is obvious that we have no 13 year-olds in the YRBSS data so these will be dropped during matching, which means we are left with 14-18 year-olds. It is also clear that gender has the least imbalance across the NYOI and YRBSS groups, but some of the other variables are quite imbalanced (see race, and some of ages, for example). 
+
+```{r}
+
+matchit(
+  NYOICase1 ~ AGENew + GENDER + Racebinary,
+  data = mydf1,
+  method = "genetic"
+  ) -> mout1
+
+summary(mout1)
+
+match.data(mout1) -> match.df
+
+```
+
+Here we have the best balance possible, given our existing data; the matched data show identical means! Now, what if we proceed to analyze the outcomes? Let us start with Activity. 
+
+## Activity
+
+Physical activity assumes values in the $[0:7]$ range. 
+
+```{r}
+
+match.df %>%
+  mutate(
+    active = ACTIVE - 1 
+  ) -> match.df
+
+table(match.df$active)
+
+lm(
+  active ~ AGENew + GENDER + Racebinary + NYOICase1,
+  data = match.df,
+  weights = weights
+  ) -> lm.01
+
+summary(lm.01)
+
+```
+
+The intercept, in this case, is referring to a 14 year-old White Female who is not in NYOI, and on average this individual is physically active for almost 4 days.  
+
+It is also noteworthy that NYOI youth are, on average, physically active for about 0.5 days more than are YRBSS youth, all else being the same. 
+
+All else being the same, Male youth and White youth are more likely to be physically active than Female youth and Non-White youth, respectively. 
+
+
+## The Binary Outcomes
+
+```{r}
+
+glm(
+  FightBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> fight.logit
+
+summary(fight.logit)
+
+exp(fight.logit$coefficients)
+
+exp(confint(fight.logit))
+
+```
+
+Look at the odds-ratios shown here, focusing on GENDERMale, for example. The $OR= 1.82$. What does this mean? This means that all else being the same, male youth are almost twice as likely to have fought than are female youth. 
+
+Similarly, the OR for YRBSS is $1.38$, indicating that YRBSS youth are 1.4 times more likely to have fought than YRBSS youth, all else being the same, of course. The 95% confidence interval of the odds-ratio spans $[1.02; 1.86]$. 
+
+Now we go through the same process for the other binary outcomes.
+
+```{r}
+
+glm(
+  CIGBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> cig.logit
+
+summary(cig.logit)
+
+exp(cig.logit$coefficients)
+
+exp(confint(cig.logit))
+
+```
+
+> No impact of NYOI re: cigarettes
+
+```{r}
+
+glm(
+  VapeBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> vape.logit
+
+summary(vape.logit)
+
+exp(vape.logit$coefficients)
+
+exp(confint(vape.logit))
+
+```
+
+> NYOI youth are less likely to vape. 
+
+```{r}
+
+glm(
+  AlcoholBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> Alcohol.logit
+
+summary(Alcohol.logit)
+
+exp(Alcohol.logit$coefficients)
+
+exp(confint(Alcohol.logit))
+```
+
+> NYOI youth are less likely to use alcohol.
+
+```{r}
+
+glm(
+  MarijBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> Marij.logit
+
+summary(Marij.logit)
+
+exp(Marij.logit$coefficients)
+
+exp(confint(Marij.logit))
+
+```
+
+NYOI youth are less likely to use marijuana. 
+
+```{r}
+
+glm(
+  RxBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> Rx.logit
+
+summary(Rx.logit)
+
+exp(Rx.logit$coefficients)
+
+exp(confint(Rx.logit))
+
+```
+
+> No impact on Rx
+
+# What about coarsened exact matching?
+
+```{r}
+
+matchit(
+  NYOICase1 ~ AGENew + GENDER + Racebinary,
+  data = mydf1,
+  method = "cem",
+  subclass = 4
+  ) -> mout2
+
+summary(mout2)
+
+match.data(mout2) -> match.df.cem
+
+summary(match.df.cem)
+
+match.df.cem %>%
+  select(subclass, NYOICase1) %>%
+  group_by(subclass, NYOICase1) %>%
+  count() %>%
+  pivot_wider(
+    names_from = NYOICase1,
+    values_from = n
+  ) %>%
+  knitr::kable(., booktabs = TRUE)
+
+```
+
+This is clearly the best match possible but now the post-matching analysis gets trickier. 
+
+```{r}
+
+match.df.cem %>%
+  mutate(
+    active = ACTIVE - 1 
+  ) -> match.df.cem
+
+table(match.df.cem$active)
+
+lm(
+  active ~ AGENew + GENDER + Racebinary + NYOICase1,
+  data = match.df.cem,
+  weights = weights
+  ) -> lm.02
+
+summary(lm.02)
+
+confint(lm.02)
+
+library("lmtest") #coeftest
+library("sandwich") #vcovCL
+
+coeftest(lm.02, vcov. = vcovCL, cluster = ~subclass)
+
+```
+
+```{r}
+
+glm(
+  FightBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df.cem,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> fight.logit.cem
+
+summary(fight.logit.cem)
+
+exp(fight.logit.cem$coefficients)
+
+exp(confint(fight.logit.cem))
+
+coeftest(fight.logit.cem, vcov. = vcovHC)
+
+```
+
+> NYOI matters for Fighting 
+
+
+```{r}
+
+glm(
+  CIGBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df.cem,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> cig.logit.cem
+
+summary(cig.logit.cem)
+
+exp(cig.logit.cem$coefficients)
+
+exp(confint(cig.logit.cem))
+
+coeftest(cig.logit.cem, vcov. = vcovHC)
+
+```
+
+> NYOI no impact on cigarettes
+
+
+```{r}
+
+glm(
+  VapeBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df.cem,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> vape.logit.cem
+
+summary(vape.logit.cem)
+
+exp(vape.logit.cem$coefficients)
+
+exp(confint(vape.logit.cem))
+
+coeftest(vape.logit.cem, vcov. = vcovHC)
+
+```
+
+> NYOI vape less
+
+
+```{r}
+
+glm(
+  AlcoholBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df.cem,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> alcohol.logit.cem
+
+summary(alcohol.logit.cem)
+
+exp(alcohol.logit.cem$coefficients)
+
+exp(confint(alcohol.logit.cem))
+
+coeftest(alcohol.logit.cem, vcov. = vcovHC)
+
+```
+
+> NYOI drink less
+
+
+```{r}
+
+glm(
+  MarijBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df.cem,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> marij.logit.cem
+
+summary(marij.logit.cem)
+
+exp(marij.logit.cem$coefficients)
+
+exp(confint(marij.logit.cem))
+
+coeftest(marij.logit.cem, vcov. = vcovHC)
+
+```
+
+> No impact on marijuana
+
+
+```{r}
+
+glm(
+  RxBinary ~ AGENew + Racebinary + GENDER + NYOICase1,
+  data = match.df.cem,
+  weights = weights,
+  family = binomial(link = "logit")
+  ) -> rx.logit.cem
+
+summary(rx.logit.cem)
+
+exp(rx.logit.cem$coefficients)
+
+exp(confint(rx.logit.cem))
+
+coeftest(rx.logit.cem, vcov. = vcovHC)
+
+```
+
+> No impact on Rx disorders
+
+
+| Outcome | NYOI Estimate/Odds Ratio | 95% Confidence Interval | p-value |
+| :-- | :-- | :-- | :-- |
+| Physical Activity | 0.55 | 0.27, 0.83 | p $\leq$ 0.05 |
+| Fighting | 1.50 | 1.17, 1.91 | p $\leq$ 0.01 |
+| Cigarettes | 1.31 | 0.68, 2.26 | Not Significant |
+| Vaping | 0.48 | 0.33, 0.69 | p $\leq$ 0.001 |
+| Alcohol | 0.54 | 0.38, 0.75 | p $\leq$ 0.05 |
+| Marijuana | 0.71 | 0.51, 0.98 | Not Significant |
+| Rx | 1.05 | 0.69, 1.58 | Not Significant |
+
+
+
